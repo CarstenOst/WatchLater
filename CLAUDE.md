@@ -19,7 +19,7 @@ Personal "read/watch later" app: paste a link, pick a category, set a reminder. 
 
 ## Runtime & deployment
 
-- GitHub Pages serves the repo root of `main`: `https://<user>.github.io/WatchLater/`.
+- GitHub Pages serves the repo root of `main`: https://carstenost.github.io/WatchLater/ (repo `CarstenOst/WatchLater`).
 - Local dev: `python3 -m http.server 8000` → http://localhost:8000/ (localhost is a secure context — SW, notifications, clipboard all work).
 - Deploying = pushing to `main` (~1 min build + up to 10 min edge cache). The footer shows the running service-worker VERSION.
 
