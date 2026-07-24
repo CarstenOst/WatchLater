@@ -1,0 +1,27 @@
+<div class="flex gap-2 mb-4 items-end">
+  <form method="get" class="flex-1">
+    <label class="block text-xs text-slate-500 mb-1">Filter by category</label>
+    <select name="category" onchange="this.form.submit()"
+            class="w-full bg-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value=""{% if selected_category_id == 0 %} selected{% endif %}>All categories</option>
+      {% for cat in categories %}
+        <option value="{{ cat.id }}"{% if cat.id == selected_category_id %} selected{% endif %}>
+          {{ cat.name }} ({{ cat.active_count }})
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+  <details class="relative">
+    <summary class="list-none cursor-pointer bg-slate-800 hover:bg-slate-700 rounded-md px-3 py-2 text-sm whitespace-nowrap">
+      + Category
+    </summary>
+    <form action="/categories" method="post"
+          class="absolute right-0 top-full mt-1 z-10 bg-slate-800 p-3 rounded-md shadow-lg flex gap-2 min-w-[18rem]">
+      <input name="name" required placeholder="Name"
+             class="bg-slate-900 rounded-md px-2 py-1 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <input name="color" type="color" value="#6b7280"
+             class="w-8 h-8 rounded bg-slate-900 border-0 cursor-pointer">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-500 rounded-md px-3 text-sm">Add</button>
+    </form>
+  </details>
+</div>

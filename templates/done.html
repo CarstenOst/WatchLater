@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Done</h1>
+
+{% include "partials/category_filter.html" %}
+
+{% if done.is_empty() %}
+  <p class="text-slate-500">Nothing done yet.</p>
+{% else %}
+<ul class="space-y-2">
+  {% for link in done %}
+    <li class="bg-slate-900 rounded-xl p-3 flex items-center justify-between gap-3">
+      <a href="{{ link.url }}" target="_blank" rel="noopener" class="text-slate-400 line-through hover:text-slate-200 break-all flex-1">{{ link.title }}</a>
+      <div class="flex gap-1 shrink-0">
+        <form action="/links/{{ link.id }}/reopen" method="post">
+          <button title="Move back to inbox"
+                  class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded">↺ Reopen</button>
+        </form>
+        <form action="/links/{{ link.id }}/delete" method="post">
+          <button class="text-xs px-2 py-1 text-slate-500 hover:text-red-400">Delete</button>
+        </form>
+      </div>
+    </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,7 @@
+/target
+/.env
+/tailwindcss
+.DS_Store
+.idea/
+.claude/settings.local.json
+watchlater.db

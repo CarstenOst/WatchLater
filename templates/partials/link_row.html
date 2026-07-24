@@ -1,0 +1,51 @@
+<li class="bg-slate-900 rounded-xl p-3">
+  <div class="flex items-start justify-between gap-3">
+    <div class="flex-1 min-w-0">
+      <a href="{{ link.url }}" target="_blank" rel="noopener"
+         class="font-medium text-slate-100 hover:text-blue-400 break-all">{{ link.title }}</a>
+      {% if let Some(note) = link.note %}
+        <p class="text-xs text-slate-400 mt-1">{{ note }}</p>
+      {% endif %}
+      <div class="text-xs text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
+        {% if let Some(cat) = link.category %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800">
+            {% if let Some(color) = cat.color %}
+              <span class="w-2 h-2 rounded-full" style="background-color: {{ color }}"></span>
+            {% endif %}
+            {{ cat.name }}
+          </span>
+        {% endif %}
+        <span class="{% if link.is_overdue %}text-red-400 font-medium{% endif %}">
+          {{ link.due_human }}
+        </span>
+        {% if link.snoozed_count > 0 %}
+          <span>· snoozed {{ link.snoozed_count }}×</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex gap-1 shrink-0">
+      <form action="/links/{{ link.id }}/done" method="post">
+        <button title="Mark done"
+                class="px-2 py-1 text-xs bg-green-700 hover:bg-green-600 rounded">✓</button>
+      </form>
+      <details class="relative">
+        <summary class="list-none cursor-pointer px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">
+          Snooze
+        </summary>
+        <form action="/links/{{ link.id }}/snooze" method="post"
+              class="absolute right-0 top-full mt-1 z-10 bg-slate-800 p-1 rounded shadow-lg flex flex-col min-w-[8rem]">
+          <button name="remind_in" value="8h"
+                  class="text-xs px-2 py-1 hover:bg-slate-700 rounded text-left">+ 8 hours</button>
+          <button name="remind_in" value="24h"
+                  class="text-xs px-2 py-1 hover:bg-slate-700 rounded text-left">+ 24 hours</button>
+          <button name="remind_in" value="1w"
+                  class="text-xs px-2 py-1 hover:bg-slate-700 rounded text-left">+ 1 week</button>
+        </form>
+      </details>
+      <form action="/links/{{ link.id }}/delete" method="post">
+        <button title="Delete"
+                class="px-2 py-1 text-xs bg-red-900 hover:bg-red-800 rounded">✕</button>
+      </form>
+    </div>
+  </div>
+</li>
