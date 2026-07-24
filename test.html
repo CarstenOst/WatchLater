@@ -1,0 +1,185 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>running</title>
+<pre id="out">running…</pre>
+<iframe id="f" style="width:1000px;height:800px"></iframe>
+<script>
+const out = [];
+let fails = 0;
+function ok(name, cond, extra) {
+  out.push((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : ' :: ' + (extra === undefined ? '' : extra)));
+  if (!cond) fails++;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function loadFrame(src) {
+  const f = document.getElementById('f');
+  await new Promise((r) => { f.onload = () => r(); f.src = src; });
+  await sleep(800);
+  return [f.contentWindow, f.contentDocument];
+}
+
+(async () => {
+  try {
+    await new Promise((r) => {
+      const q = indexedDB.deleteDatabase('watchlater');
+      q.onsuccess = q.onerror = q.onblocked = () => r();
+    });
+
+    // -- 1. boot + seed --------------------------------------------------
+    let [win, doc] = await loadFrame('./index.html#/');
+    const filterOpts = () => [...doc.querySelectorAll('#category-filter option')].map((o) => o.textContent.trim());
+    ok('seed categories in filter, alpha order',
+       JSON.stringify(filterOpts()) === JSON.stringify(['All categories', 'General (0)', 'Read (0)', 'Watch (0)']),
+       JSON.stringify(filterOpts()));
+    ok('empty state text', doc.body.textContent.includes('Nothing saved yet. Paste a link above.'));
+    ok('add form present', !!doc.getElementById('add-form'));
+    ok('nav inbox active', doc.getElementById('nav-inbox').classList.contains('text-white'));
+
+    // -- 2. add link, default 24h preset --------------------------------
+    doc.getElementById('url-input').value = 'https://example.com/some/long/path';
+    doc.getElementById('note-input').value = '  a note  ';
+    doc.getElementById('add-form').requestSubmit();
+    await sleep(800);
+    let st = await win.wlDB.get();
+    ok('link stored', st.links.length === 1, JSON.stringify(st.links.map((l) => l.url)));
+    const l0 = st.links[0] || {};
+    ok('note trimmed', l0.note === 'a note', JSON.stringify(l0.note));
+    ok('dueAt = now+24h', Math.abs(l0.dueAt - (Date.now() + 24 * 3600 * 1000)) < 60 * 1000, String(l0.dueAt - Date.now()));
+    ok('upcoming section shown', doc.body.textContent.includes('Upcoming'));
+    ok('fallback title = domain label', (doc.querySelector('#lists a') || {}).textContent === 'example',
+       (doc.querySelector('#lists a') || {}).textContent);
+    ok('form reset to 24h default', doc.getElementById('remind-select').value === '24h');
+
+    // -- 3. invalid URL → inline error (bypass native validation to hit JS path)
+    const form = doc.getElementById('add-form');
+    form.noValidate = true;
+    doc.getElementById('url-input').value = 'example.com';
+    form.requestSubmit();
+    await sleep(400);
+    ok('invalid url inline error shown', !doc.getElementById('url-error').classList.contains('hidden'));
+    st = await win.wlDB.get();
+    ok('invalid url not stored', st.links.length === 1, String(st.links.length));
+    doc.getElementById('url-input').value = '';
+    doc.getElementById('url-input').dispatchEvent(new win.Event('input', { bubbles: true }));
+    ok('error hides on input', doc.getElementById('url-error').classList.contains('hidden'));
+    form.noValidate = false;
+
+    // -- 4. custom datetime parses as local ------------------------------
+    doc.getElementById('remind-select').value = 'custom';
+    doc.getElementById('remind-select').dispatchEvent(new win.Event('change', { bubbles: true }));
+    ok('custom-due unhidden on select', !doc.getElementById('custom-due').classList.contains('hidden'));
+    doc.getElementById('url-input').value = 'https://a.io/x';
+    doc.getElementById('custom-due').value = '2030-01-02T12:30';
+    doc.getElementById('add-form').requestSubmit();
+    await sleep(800);
+    st = await win.wlDB.get();
+    const custom = st.links.find((l) => l.url === 'https://a.io/x');
+    ok('custom dueAt = local-time parse', !!custom && custom.dueAt === new Date('2030-01-02T12:30').getTime(),
+       custom && String(custom.dueAt));
+    ok('short url shown raw', [...doc.querySelectorAll('#lists a')].some((a) => a.textContent === 'https://a.io/x'));
+
+    // -- 5. overdue split (direct IDB write, then reload: boot re-reads) --
+    await win.wlDB.update((s) => {
+      s.links.find((l) => l.url === 'https://a.io/x').dueAt = Date.now() - 3600 * 1000;
+      return s;
+    });
+    [win, doc] = await loadFrame('./index.html?r=5#/');
+    ok('Due now section appears', doc.body.textContent.includes('Due now'));
+    let dueRow = [...doc.querySelectorAll('#lists li')].find((li) => li.textContent.includes('https://a.io/x'));
+    ok('overdue shows "1h ago"', !!dueRow && /1h ago/.test(dueRow.textContent),
+       dueRow && dueRow.textContent.replace(/\s+/g, ' ').slice(0, 80));
+
+    // -- 6. snooze +8h from now, counter --------------------------------
+    dueRow.querySelector('details').open = true;
+    dueRow.querySelector('[data-action="snooze"][data-preset="8h"]').click();
+    await sleep(600);
+    st = await win.wlDB.get();
+    const snoozed = st.links.find((l) => l.url === 'https://a.io/x');
+    ok('snoozed dueAt = now+8h', Math.abs(snoozed.dueAt - (Date.now() + 8 * 3600 * 1000)) < 60 * 1000);
+    ok('snoozedCount incremented', snoozed.snoozedCount === 1, String(snoozed.snoozedCount));
+    ok('snoozed 1× rendered', doc.body.textContent.includes('snoozed 1×'));
+    ok('notifiedDueAt untouched', snoozed.notifiedDueAt === null);
+
+    // -- 7. done → done view → reopen -----------------------------------
+    const row2 = [...doc.querySelectorAll('#lists li')].find((li) => li.textContent.includes('https://a.io/x'));
+    row2.querySelector('[data-action="done"]').click();
+    await sleep(600);
+    st = await win.wlDB.get();
+    ok('doneAt set', typeof st.links.find((l) => l.url === 'https://a.io/x').doneAt === 'number');
+    win.location.hash = '#/done'; await sleep(350);
+    ok('nav done active', doc.getElementById('nav-done').classList.contains('text-white'));
+    const doneRow = [...doc.querySelectorAll('#lists li')].find((li) => li.textContent.includes('https://a.io/x'));
+    ok('done row line-through', !!doneRow && doneRow.querySelector('a').className.includes('line-through'));
+    doneRow.querySelector('[data-action="reopen"]').click();
+    await sleep(600);
+    st = await win.wlDB.get();
+    const reo = st.links.find((l) => l.url === 'https://a.io/x');
+    ok('reopen clears doneAt, keeps dueAt', reo.doneAt === null && Math.abs(reo.dueAt - (Date.now() + 8 * 3600 * 1000)) < 120 * 1000);
+
+    // -- 8. categories: create, dup-ignore, filter, drop rule -----------
+    win.location.hash = '#/'; await sleep(350);
+    doc.getElementById('new-cat-name').value = 'Zebra';
+    doc.getElementById('new-cat-form').requestSubmit();
+    await sleep(600);
+    ok('new category listed', filterOpts().includes('Zebra (0)'), JSON.stringify(filterOpts()));
+    doc.getElementById('new-cat-name').value = 'Zebra';
+    doc.getElementById('new-cat-form').requestSubmit();
+    await sleep(400);
+    st = await win.wlDB.get();
+    ok('duplicate category silently ignored', st.categories.filter((c) => c.name === 'Zebra').length === 1);
+
+    const zebraId = st.categories.find((c) => c.name === 'Zebra').id;
+    doc.getElementById('url-input').value = 'https://zebra.example.org/article';
+    doc.getElementById('category-select').value = zebraId;
+    doc.getElementById('remind-select').value = '8h';
+    doc.getElementById('add-form').requestSubmit();
+    await sleep(600);
+    ok('zebra count now 1', filterOpts().includes('Zebra (1)'), JSON.stringify(filterOpts()));
+    doc.getElementById('category-filter').value = zebraId;
+    doc.getElementById('category-filter').dispatchEvent(new win.Event('change', { bubbles: true }));
+    await sleep(450);
+    ok('filter reflected in hash', win.location.hash.includes('cat=' + zebraId), win.location.hash);
+    ok('filtered view shows 1 row', doc.querySelectorAll('#lists li').length === 1, String(doc.querySelectorAll('#lists li').length));
+    doc.querySelector('#lists li [data-action="done"]').click();
+    await sleep(600);
+    ok('filter dropped when filtered view emptied', !win.location.hash.includes('cat='), win.location.hash);
+    ok('unfiltered rows visible again', doc.querySelectorAll('#lists li').length === 2, String(doc.querySelectorAll('#lists li').length));
+
+    // -- 9. share target -------------------------------------------------
+    [win, doc] = await loadFrame('./index.html?text=' + encodeURIComponent('check this https://youtu.be/xyz out'));
+    ok('share target prefilled from text', doc.getElementById('url-input').value === 'https://youtu.be/xyz',
+       doc.getElementById('url-input').value);
+    ok('share query cleaned', win.location.search === '', win.location.search);
+
+    // -- 10. service worker precache ------------------------------------
+    const keys = await caches.keys();
+    ok('sw precache created', keys.some((k) => k.startsWith('wl-')), JSON.stringify(keys));
+    if (keys.some((k) => k.startsWith('wl-'))) {
+      const c = await caches.open(keys.find((k) => k.startsWith('wl-')));
+      ok('precache holds 11 entries', (await c.keys()).length === 11, String((await c.keys()).length));
+    }
+
+    // -- 11. offline: block the server, app must serve from SW cache ----
+    await navigator.serviceWorker.ready;
+    await fetch('./__block', { method: 'POST' });
+    const probe = await fetch('./__ping_uncached_path').then((r) => r.status).catch(() => 0);
+    ok('network blocked (uncached GET fails)', probe === 503 || probe === 0, String(probe));
+    [win, doc] = await loadFrame('./index.html?off=1#/');
+    ok('offline shell renders (cache-first navigate)', !!doc.getElementById('add-form'));
+    ok('offline assets served (filter present)', !!doc.getElementById('category-filter'));
+    ok('stored data renders offline',
+       [...doc.querySelectorAll('#lists a')].some((a) => a.textContent === 'example'),
+       [...doc.querySelectorAll('#lists a')].map((a) => a.textContent).join(','));
+    await fetch('./__unblock', { method: 'POST' });
+  } catch (err) {
+    out.push('ERROR ' + ((err && err.stack) || err));
+    fails++;
+  }
+  document.getElementById('out').textContent = out.join('\n');
+  document.title = fails ? 'FAILS:' + fails : 'ALL-PASS';
+  try {
+    await fetch('./__results', { method: 'POST', body: document.title + '\n' + out.join('\n') });
+  } catch (_) {}
+})();
+</script>

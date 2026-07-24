@@ -78,6 +78,8 @@ Personal "read/watch later" app: paste a link, pick a category, set a reminder. 
 
 ```sh
 python3 -m http.server 8000    # local dev server (SW works on localhost)
+# regression harness: open http://localhost:8000/test.html — drives the real
+# app in an iframe; results render in-page (title = ALL-PASS / FAILS:n)
 
 # rebuild CSS after class changes (one-time binary download, gitignored):
 curl -sL -o tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-macos-arm64

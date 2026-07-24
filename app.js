@@ -768,11 +768,13 @@ ${renderCategoryFilter()}
       maybeRenderLists();
     }, 60 * 1000);
 
-    document.addEventListener('visibilitychange', () => {
+    document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState !== 'visible') return;
       if (!swRegFailed) {
         navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
       }
+      // Pick up writes made while hidden (SW periodicsync, another tab).
+      try { state = (await wlDB.get()) || state; } catch (_) {}
       checkReminders();
       maybeRenderLists();
     });
