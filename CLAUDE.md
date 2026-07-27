@@ -5,7 +5,8 @@ Personal "read/watch later" app: paste a link, pick a category, set a reminder. 
 ## Scope (v2, static)
 
 - Add links (URL + optional note + category), paste-from-clipboard button
-- User-defined categories with inline "+ Category" form
+- User-defined categories: "+ Category" popover on the filter row, plus a "+ New category…" option inside the add-form dropdown that reveals an inline name/color row (category + link created in one save; duplicate names reuse the existing category)
+- The add form's typed values survive every re-render (capture/restore in `render()`); only a successful save clears it
 - Category filter dropdown (active count per category) on both views; filter persists across mutations and only drops when the filtered current view becomes empty
 - Reminder presets (8h / 24h / 1 week) + custom `datetime-local`
 - Views: Inbox (Due now / Upcoming), Done (200 most recent)

@@ -11,6 +11,8 @@
   let state = null;
   let route = { view: 'inbox', cat: null };
   let bootFocusDone = false;
+  let savedAddForm = null;       // last-seen add-form values, restored across re-renders
+  let pendingFormReset = false;  // set by addLink so the post-save render starts fresh
   let swRegFailed = !('serviceWorker' in navigator);
 
   // ---------- router ----------
@@ -112,6 +114,7 @@
     <select name="category_id" id="category-select" class="bg-slate-800 rounded-md px-3 py-2 text-sm">
       <option value="">No category</option>
       ${cats}
+      <option value="__new__">+ New category…</option>
     </select>
     <select name="remind_in" id="remind-select" class="bg-slate-800 rounded-md px-3 py-2 text-sm">
       <option value="8h">Remind in 8 hours</option>
@@ -119,6 +122,12 @@
       <option value="1w">Remind in 1 week</option>
       <option value="custom">Custom date…</option>
     </select>
+  </div>
+  <div id="new-cat-inline" class="hidden flex gap-2 items-center">
+    <input name="new_category_name" id="inline-cat-name" required disabled placeholder="New category name"
+           class="bg-slate-800 rounded-md px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <input name="new_category_color" id="inline-cat-color" type="color" value="#6b7280" disabled
+           class="w-8 h-8 rounded bg-slate-900 border-0 cursor-pointer">
   </div>
   <input id="custom-due" type="datetime-local" name="custom_due_at"
          class="hidden bg-slate-800 rounded-md px-3 py-2 text-sm">
@@ -265,9 +274,52 @@
     set(document.getElementById('nav-done'), route.view === 'done');
   }
 
+  // The add form lives inside #app, so every render would wipe a half-typed
+  // link (e.g. when creating a category mid-add). Capture its values before
+  // replacing the markup and restore them after — except right after a
+  // successful save, where the form must start fresh.
+  function toggleInlineCat(show) {
+    document.getElementById('new-cat-inline').classList.toggle('hidden', !show);
+    document.getElementById('inline-cat-name').disabled = !show;
+    document.getElementById('inline-cat-color').disabled = !show;
+  }
+
+  function captureAddForm() {
+    if (!document.getElementById('add-form')) return null;
+    const val = (id) => document.getElementById(id).value;
+    return {
+      url: val('url-input'), note: val('note-input'),
+      cat: val('category-select'), remind: val('remind-select'),
+      custom: val('custom-due'),
+      newCatName: val('inline-cat-name'), newCatColor: val('inline-cat-color'),
+    };
+  }
+
+  function restoreAddForm(v) {
+    if (!document.getElementById('add-form')) return;
+    const set = (id, value) => { document.getElementById(id).value = value; };
+    set('url-input', v.url);
+    set('note-input', v.note);
+    const sel = document.getElementById('category-select');
+    sel.value = v.cat; // a since-deleted category falls back to no selection
+    if (sel.selectedIndex === -1) sel.value = '';
+    set('remind-select', v.remind);
+    set('custom-due', v.custom);
+    document.getElementById('custom-due').classList.toggle('hidden', v.remind !== 'custom');
+    set('inline-cat-name', v.newCatName);
+    set('inline-cat-color', v.newCatColor);
+    toggleInlineCat(sel.value === '__new__');
+  }
+
   function render() {
     route = parseHash();
     updateNav();
+    const live = captureAddForm();
+    if (live) savedAddForm = live;
+    if (pendingFormReset) {
+      savedAddForm = null;
+      pendingFormReset = false;
+    }
     const app = document.getElementById('app');
     app.innerHTML = route.view === 'done'
       ? `
@@ -278,6 +330,7 @@ ${renderCategoryFilter()}
 <section class="mb-6">${renderAddForm()}</section>
 ${renderCategoryFilter()}
 <div id="lists">${renderListsHtml()}</div>`;
+    if (route.view === 'inbox' && savedAddForm) restoreAddForm(savedAddForm);
     if (!bootFocusDone && route.view === 'inbox') {
       bootFocusDone = true;
       const u = document.getElementById('url-input');
@@ -338,12 +391,27 @@ ${renderCategoryFilter()}
       form.querySelector('#url-error').classList.remove('hidden');
       return;
     }
+    let categoryId = form.querySelector('#category-select').value || null;
+    let newCat = null;
+    if (categoryId === '__new__') {
+      const name = form.querySelector('#inline-cat-name').value.trim();
+      if (!name) { // native `required` covers this; guard for novalidate paths
+        form.querySelector('#inline-cat-name').focus();
+        return;
+      }
+      newCat = {
+        id: crypto.randomUUID(),
+        name,
+        color: form.querySelector('#inline-cat-color').value || null,
+      };
+      categoryId = newCat.id;
+    }
     const link = {
       id: crypto.randomUUID(),
       url,
       title: null,
       note: form.querySelector('#note-input').value.trim() || null,
-      categoryId: form.querySelector('#category-select').value || null,
+      categoryId,
       createdAt: Date.now(),
       dueAt: resolveRemindIn(
         form.querySelector('#remind-select').value,
@@ -353,7 +421,15 @@ ${renderCategoryFilter()}
       snoozedCount: 0,
       notifiedDueAt: null,
     };
-    await mutate((s) => { s.links.push(link); });
+    pendingFormReset = true;
+    await mutate((s) => {
+      if (newCat) {
+        const dup = s.categories.find((c) => c.name === newCat.name);
+        if (dup) link.categoryId = dup.id; // dup name: reuse, like the popover
+        else s.categories.push(newCat);
+      }
+      s.links.push(link);
+    });
     maybeRequestPersist(false);
     enrichTitle(link.id, url);
   }
@@ -718,6 +794,10 @@ ${renderCategoryFilter()}
     app.addEventListener('change', (e) => {
       if (e.target.id === 'remind-select') {
         document.getElementById('custom-due').classList.toggle('hidden', e.target.value !== 'custom');
+      } else if (e.target.id === 'category-select') {
+        const isNew = e.target.value === '__new__';
+        toggleInlineCat(isNew);
+        if (isNew) document.getElementById('inline-cat-name').focus();
       } else if (e.target.id === 'category-filter') {
         location.hash = buildHash(route.view, e.target.value || null);
       }

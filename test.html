@@ -146,6 +146,37 @@ async function loadFrame(src) {
     ok('filter dropped when filtered view emptied', !win.location.hash.includes('cat='), win.location.hash);
     ok('unfiltered rows visible again', doc.querySelectorAll('#lists li').length === 2, String(doc.querySelectorAll('#lists li').length));
 
+    // -- 8b. inline "+ New category…" in the add-form dropdown -----------
+    const catSel = doc.getElementById('category-select');
+    catSel.value = '__new__';
+    catSel.dispatchEvent(new win.Event('change', { bubbles: true }));
+    ok('inline cat row unhidden on __new__', !doc.getElementById('new-cat-inline').classList.contains('hidden'));
+    doc.getElementById('inline-cat-name').value = 'Quokka';
+    doc.getElementById('url-input').value = 'https://quokka.example.net/pic';
+    doc.getElementById('add-form').requestSubmit();
+    await sleep(600);
+    st = await win.wlDB.get();
+    const quokkaCat = st.categories.find((c) => c.name === 'Quokka');
+    ok('inline category created', !!quokkaCat);
+    const qLink = st.links.find((l) => l.url === 'https://quokka.example.net/pic');
+    ok('link assigned to inline category', !!qLink && !!quokkaCat && qLink.categoryId === quokkaCat.id,
+       JSON.stringify(qLink && qLink.categoryId));
+    ok('form cleared after save', doc.getElementById('url-input').value === ''
+       && doc.getElementById('category-select').value === '');
+    ok('inline row hidden after save', doc.getElementById('new-cat-inline').classList.contains('hidden'));
+
+    // -- 8c. add form survives popover category creation ----------------
+    doc.getElementById('url-input').value = 'https://keep.me/around';
+    doc.getElementById('note-input').value = 'still here';
+    doc.getElementById('new-cat-name').value = 'Yak';
+    doc.getElementById('new-cat-form').requestSubmit();
+    await sleep(600);
+    ok('popover category created', filterOpts().includes('Yak (0)'), JSON.stringify(filterOpts()));
+    ok('url preserved across category creation',
+       doc.getElementById('url-input').value === 'https://keep.me/around',
+       doc.getElementById('url-input').value);
+    ok('note preserved across category creation', doc.getElementById('note-input').value === 'still here');
+
     // -- 9. share target -------------------------------------------------
     [win, doc] = await loadFrame('./index.html?text=' + encodeURIComponent('check this https://youtu.be/xyz out'));
     ok('share target prefilled from text', doc.getElementById('url-input').value === 'https://youtu.be/xyz',
