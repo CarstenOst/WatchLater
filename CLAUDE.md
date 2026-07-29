@@ -7,7 +7,7 @@ Personal "read/watch later" app: paste a link, pick a category, set a reminder. 
 - Add links (URL + optional note + category), paste-from-clipboard button
 - User-defined categories: "+ Category" popover on the filter row, plus a "+ New category…" option inside the add-form dropdown that reveals an inline name/color row (category + link created in one save; duplicate names reuse the existing category)
 - The add form's typed values survive every re-render (capture/restore in `render()`); only a successful save clears it
-- Category filter dropdown (active count per category) on both views; filter persists across mutations and only drops when the filtered current view becomes empty
+- Category filter chips (multi-select toggle, active count per category) on both views; each chip has a ✕ that deletes the category after a confirm — its links are kept uncategorized; the filter persists across mutations, deleted category ids fall out of the selection, and the whole filter drops only when the filtered current view becomes empty
 - Reminder presets (8h / 24h / 1 week) + custom `datetime-local`
 - Views: Inbox (Due now / Upcoming), Done (200 most recent)
 - Snooze (always from now) / mark done / reopen / delete
@@ -29,7 +29,7 @@ Personal "read/watch later" app: paste a link, pick a category, set a reminder. 
 - Vanilla JS. No framework, no build step, no npm, no CDN.
 - **CSS:** Tailwind standalone CLI **v3.4.17** (pinned — v4 changed config + some defaults), compiled once to a committed `app.css`. The `tailwindcss` binary is gitignored.
 - **Storage:** IndexedDB, one JSON document (db `watchlater`, store `state`, key `root`) behind `db.js` (`self.wlDB`), loaded by the page via `<script>` and by the SW via `importScripts`. IndexedDB (not localStorage) because the SW must read state for `periodicsync` and, later, the push relay.
-- **Routing:** hash-based (`#/`, `#/done`, filter `?cat=<uuid>` inside the hash) — one real document URL under the `/WatchLater/` subpath, no Pages 404 hacks.
+- **Routing:** hash-based (`#/`, `#/done`, filter `?cat=<uuid>[,<uuid>…]` inside the hash) — one real document URL under the `/WatchLater/` subpath, no Pages 404 hacks.
 - **Enrichment:** noembed.com (CORS-enabled oEmbed, ~150 providers incl. YouTube/Vimeo/Reddit). Best-effort and isolated; if it dies, links fall back to domain-label titles.
 
 ## Data model

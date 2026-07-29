@@ -5,7 +5,7 @@ importScripts('./db.js');
 // Bump VERSION in the SAME commit as any change to a precached file —
 // GitHub Pages serves max-age=600, so freshness is delivered by the SW
 // update cycle (updateViaCache:'none' + cache:'reload'), not by fetch.
-const VERSION = '2026-07-27.1';
+const VERSION = '2026-07-29.1';
 const CACHE = 'wl-' + VERSION;
 const PRECACHE = [
   './', './index.html', './app.css', './app.js', './db.js',

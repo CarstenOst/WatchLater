@@ -28,10 +28,14 @@ async function loadFrame(src) {
 
     // -- 1. boot + seed --------------------------------------------------
     let [win, doc] = await loadFrame('./index.html#/');
-    const filterOpts = () => [...doc.querySelectorAll('#category-filter option')].map((o) => o.textContent.trim());
+    const filterOpts = () => [...doc.querySelectorAll('#category-filter [data-filter-cat]')]
+      .filter((b) => b.dataset.filterCat)
+      .map((b) => b.textContent.replace(/\s+/g, ' ').trim());
     ok('seed categories in filter, alpha order',
-       JSON.stringify(filterOpts()) === JSON.stringify(['All categories', 'General (0)', 'Read (0)', 'Watch (0)']),
+       JSON.stringify(filterOpts()) === JSON.stringify(['General (0)', 'Read (0)', 'Watch (0)']),
        JSON.stringify(filterOpts()));
+    ok('All chip present and selected',
+       (doc.querySelector('#category-filter [data-filter-cat=""]') || {}).getAttribute('aria-pressed') === 'true');
     ok('empty state text', doc.body.textContent.includes('Nothing saved yet. Paste a link above.'));
     ok('add form present', !!doc.getElementById('add-form'));
     ok('nav inbox active', doc.getElementById('nav-inbox').classList.contains('text-white'));
@@ -136,10 +140,11 @@ async function loadFrame(src) {
     doc.getElementById('add-form').requestSubmit();
     await sleep(600);
     ok('zebra count now 1', filterOpts().includes('Zebra (1)'), JSON.stringify(filterOpts()));
-    doc.getElementById('category-filter').value = zebraId;
-    doc.getElementById('category-filter').dispatchEvent(new win.Event('change', { bubbles: true }));
+    doc.querySelector('[data-filter-cat="' + zebraId + '"]').click();
     await sleep(450);
     ok('filter reflected in hash', win.location.hash.includes('cat=' + zebraId), win.location.hash);
+    ok('chip marked selected',
+       doc.querySelector('[data-filter-cat="' + zebraId + '"]').getAttribute('aria-pressed') === 'true');
     ok('filtered view shows 1 row', doc.querySelectorAll('#lists li').length === 1, String(doc.querySelectorAll('#lists li').length));
     doc.querySelector('#lists li [data-action="done"]').click();
     await sleep(600);
@@ -176,6 +181,51 @@ async function loadFrame(src) {
        doc.getElementById('url-input').value === 'https://keep.me/around',
        doc.getElementById('url-input').value);
     ok('note preserved across category creation', doc.getElementById('note-input').value === 'still here');
+
+    // -- 8d. multi-select filter -----------------------------------------
+    st = await win.wlDB.get();
+    const yakId = st.categories.find((c) => c.name === 'Yak').id;
+    const quokkaId = st.categories.find((c) => c.name === 'Quokka').id;
+    doc.getElementById('url-input').value = 'https://yak.example.com/wool';
+    doc.getElementById('category-select').value = yakId;
+    doc.getElementById('add-form').requestSubmit();
+    await sleep(600);
+    doc.querySelector('[data-filter-cat="' + quokkaId + '"]').click();
+    await sleep(450);
+    doc.querySelector('[data-filter-cat="' + yakId + '"]').click();
+    await sleep(450);
+    ok('hash holds both selected cats',
+       win.location.hash.includes(quokkaId) && win.location.hash.includes(yakId), win.location.hash);
+    ok('multi-filter shows rows from both cats', doc.querySelectorAll('#lists li').length === 2,
+       String(doc.querySelectorAll('#lists li').length));
+    doc.querySelector('[data-filter-cat="' + quokkaId + '"]').click();
+    await sleep(450);
+    ok('deselect keeps other cat only',
+       win.location.hash.includes(yakId) && !win.location.hash.includes(quokkaId), win.location.hash);
+    ok('deselect leaves 1 row', doc.querySelectorAll('#lists li').length === 1,
+       String(doc.querySelectorAll('#lists li').length));
+
+    // -- 8e. delete category (yak still selected in the filter) ----------
+    win.confirm = () => false;
+    doc.querySelector('[data-delete-cat="' + yakId + '"]').click();
+    await sleep(400);
+    st = await win.wlDB.get();
+    ok('cancelled delete keeps category', st.categories.some((c) => c.id === yakId));
+    win.confirm = () => true;
+    doc.querySelector('[data-delete-cat="' + yakId + '"]').click();
+    await sleep(600);
+    st = await win.wlDB.get();
+    ok('category deleted', !st.categories.some((c) => c.id === yakId));
+    const yakLink = st.links.find((l) => l.url === 'https://yak.example.com/wool');
+    ok('orphaned link kept without category', !!yakLink && yakLink.categoryId === null,
+       JSON.stringify(yakLink && yakLink.categoryId));
+    ok('deleted cat dropped from filter', !win.location.hash.includes('cat='), win.location.hash);
+    ok('chip removed from filter row', !doc.querySelector('[data-delete-cat="' + yakId + '"]'));
+    doc.querySelector('[data-filter-cat="' + quokkaId + '"]').click();
+    await sleep(450);
+    doc.querySelector('#category-filter [data-filter-cat=""]').click();
+    await sleep(450);
+    ok('All chip clears filter', !win.location.hash.includes('cat='), win.location.hash);
 
     // -- 9. share target -------------------------------------------------
     [win, doc] = await loadFrame('./index.html?text=' + encodeURIComponent('check this https://youtu.be/xyz out'));

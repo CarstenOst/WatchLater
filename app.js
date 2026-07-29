@@ -9,7 +9,7 @@
   const PRESET_MS = { '8h': 8 * HOUR, '24h': 24 * HOUR, '1w': 7 * 24 * HOUR };
 
   let state = null;
-  let route = { view: 'inbox', cat: null };
+  let route = { view: 'inbox', cats: [] };
   let bootFocusDone = false;
   let savedAddForm = null;       // last-seen add-form values, restored across re-renders
   let pendingFormReset = false;  // set by addLink so the post-save render starts fresh
@@ -20,15 +20,18 @@
   function parseHash() {
     const h = location.hash.replace(/^#/, '');
     const [path, query] = h.split('?');
+    const cat = new URLSearchParams(query || '').get('cat') || '';
     return {
       view: path === '/done' ? 'done' : 'inbox',
-      cat: new URLSearchParams(query || '').get('cat') || null,
+      cats: cat ? cat.split(',').filter(Boolean) : [],
     };
   }
 
-  function buildHash(view, cat) {
+  function buildHash(view, cats) {
     const path = view === 'done' ? '#/done' : '#/';
-    return cat ? path + '?cat=' + encodeURIComponent(cat) : path;
+    return cats && cats.length
+      ? path + '?cat=' + cats.map(encodeURIComponent).join(',')
+      : path;
   }
 
   // ---------- view helpers ----------
@@ -140,34 +143,50 @@
   }
 
   function renderCategoryFilter() {
-    const opts = sortedCategories()
-      .map((c) =>
-        `<option value="${c.id}"${route.cat === c.id ? ' selected' : ''}>` +
-        `${escapeHtml(c.name)} (${activeCount(c.id)})</option>`)
-      .join('');
+    const sel = new Set(route.cats);
+    const chips = sortedCategories().map((c) => {
+      const on = sel.has(c.id);
+      const color = safeColor(c.color);
+      return `
+<span class="inline-flex items-stretch rounded-md overflow-hidden">
+  <button data-filter-cat="${c.id}" aria-pressed="${on}"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm ${on
+            ? 'bg-blue-600 text-white'
+            : 'bg-slate-800 hover:bg-slate-700 text-slate-200'}">
+    ${color ? `<span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${color}"></span>` : ''}
+    ${escapeHtml(c.name)} (${activeCount(c.id)})
+  </button>
+  <button data-delete-cat="${c.id}" title="Delete category ${escapeHtml(c.name)}"
+          class="px-1.5 text-xs border-l ${on
+            ? 'bg-blue-600 text-blue-200 hover:text-white border-blue-500'
+            : 'bg-slate-800 hover:bg-slate-700 text-slate-500 hover:text-red-400 border-slate-700'}">✕</button>
+</span>`;
+    }).join('');
     return `
-<div class="flex gap-2 mb-4 items-end">
-  <div class="flex-1">
-    <label class="block text-xs text-slate-500 mb-1" for="category-filter">Filter by category</label>
-    <select id="category-filter"
-            class="w-full bg-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <option value=""${route.cat ? '' : ' selected'}>All categories</option>
-      ${opts}
-    </select>
+<div class="mb-4">
+  <div class="flex items-center justify-between mb-1.5">
+    <span class="text-xs text-slate-500">Filter by category</span>
+    <details class="relative">
+      <summary class="list-none cursor-pointer bg-slate-800 hover:bg-slate-700 rounded-md px-2.5 py-1 text-sm whitespace-nowrap">
+        + Category
+      </summary>
+      <form id="new-cat-form"
+            class="absolute right-0 top-full mt-1 z-10 bg-slate-800 p-3 rounded-md shadow-lg flex gap-2 min-w-[18rem]">
+        <input name="name" id="new-cat-name" required placeholder="Name"
+               class="bg-slate-900 rounded-md px-2 py-1 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input name="color" id="new-cat-color" type="color" value="#6b7280"
+               class="w-8 h-8 rounded bg-slate-900 border-0 cursor-pointer">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-500 rounded-md px-3 text-sm">Add</button>
+      </form>
+    </details>
   </div>
-  <details class="relative">
-    <summary class="list-none cursor-pointer bg-slate-800 hover:bg-slate-700 rounded-md px-3 py-2 text-sm whitespace-nowrap">
-      + Category
-    </summary>
-    <form id="new-cat-form"
-          class="absolute right-0 top-full mt-1 z-10 bg-slate-800 p-3 rounded-md shadow-lg flex gap-2 min-w-[18rem]">
-      <input name="name" id="new-cat-name" required placeholder="Name"
-             class="bg-slate-900 rounded-md px-2 py-1 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <input name="color" id="new-cat-color" type="color" value="#6b7280"
-             class="w-8 h-8 rounded bg-slate-900 border-0 cursor-pointer">
-      <button type="submit" class="bg-blue-600 hover:bg-blue-500 rounded-md px-3 text-sm">Add</button>
-    </form>
-  </details>
+  <div id="category-filter" class="flex flex-wrap gap-1.5 items-center">
+    <button data-filter-cat="" aria-pressed="${sel.size === 0}"
+            class="px-2.5 py-1.5 text-sm rounded-md ${sel.size === 0
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'}">All</button>
+    ${chips}
+  </div>
 </div>`;
   }
 
@@ -233,7 +252,7 @@
     const inDone = route.view === 'done';
     return state.links.filter((l) =>
       (inDone ? l.doneAt != null : l.doneAt == null) &&
-      (!route.cat || l.categoryId === route.cat));
+      (!route.cats.length || route.cats.includes(l.categoryId)));
   }
 
   function renderListsHtml() {
@@ -357,16 +376,19 @@ ${renderCategoryFilter()}
     checkReminders();
   }
 
-  // Port of v1 smart_redirect: keep the category filter across mutations,
-  // drop it only when the current view's filtered list just became empty.
+  // Port of v1 smart_redirect: keep the category filter across mutations.
+  // Ids of since-deleted categories fall out of the selection; the whole
+  // filter drops only when the current view's filtered list just became empty.
   function applyFilterDropRule() {
-    if (!route.cat) return;
+    if (!route.cats.length) return;
+    const valid = route.cats.filter((id) => state.categories.some((c) => c.id === id));
     const inDone = route.view === 'done';
     const remaining = state.links.filter((l) =>
-      l.categoryId === route.cat &&
+      valid.includes(l.categoryId) &&
       (inDone ? l.doneAt != null : l.doneAt == null)).length;
-    if (remaining === 0) {
-      history.replaceState(null, '', location.pathname + location.search + buildHash(route.view, null));
+    const next = remaining === 0 ? [] : valid;
+    if (next.length !== route.cats.length) {
+      history.replaceState(null, '', location.pathname + location.search + buildHash(route.view, next));
       route = parseHash();
     }
   }
@@ -455,6 +477,26 @@ ${renderCategoryFilter()}
   const deleteLink = (id) => mutate((s) => {
     s.links = s.links.filter((l) => l.id !== id);
   });
+
+  function toggleFilterCat(id) {
+    const next = !id ? []
+      : route.cats.includes(id) ? route.cats.filter((c) => c !== id)
+      : [...route.cats, id];
+    location.hash = buildHash(route.view, next);
+  }
+
+  async function deleteCategory(id) {
+    const cat = state.categories.find((c) => c.id === id);
+    if (!cat) return;
+    const n = state.links.filter((l) => l.categoryId === id).length;
+    const msg = 'Delete category "' + cat.name + '"?' +
+      (n ? ' ' + n + ' link' + (n === 1 ? '' : 's') + ' in it will be kept without a category.' : '');
+    if (!confirm(msg)) return;
+    await mutate((s) => {
+      s.categories = s.categories.filter((c) => c.id !== id);
+      for (const l of s.links) if (l.categoryId === id) l.categoryId = null;
+    });
+  }
 
   async function createCategory(form) {
     const name = form.querySelector('#new-cat-name').value.trim();
@@ -765,6 +807,13 @@ ${renderCategoryFilter()}
     const app = document.getElementById('app');
 
     app.addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-filter-cat], [data-delete-cat]');
+      if (chip) {
+        // data-filter-cat="" is the All chip, so test the delete attr first
+        if (chip.dataset.deleteCat) deleteCategory(chip.dataset.deleteCat);
+        else toggleFilterCat(chip.dataset.filterCat);
+        return;
+      }
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const action = btn.dataset.action;
@@ -798,8 +847,6 @@ ${renderCategoryFilter()}
         const isNew = e.target.value === '__new__';
         toggleInlineCat(isNew);
         if (isNew) document.getElementById('inline-cat-name').focus();
-      } else if (e.target.id === 'category-filter') {
-        location.hash = buildHash(route.view, e.target.value || null);
       }
     });
 
