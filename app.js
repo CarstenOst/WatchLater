@@ -586,7 +586,7 @@ ${renderCategoryFilter()}
       btn.title = p === 'denied' ? 'Re-enable in browser site settings' : '';
     };
     refresh();
-    btn.addEventListener('click', async () => {
+    const enable = async () => {
       if (Notification.permission !== 'default') return;
       await Notification.requestPermission(); // must stay inside the gesture
       refresh();
@@ -595,7 +595,22 @@ ${renderCategoryFilter()}
         registerPeriodicSync();
         checkReminders();
       }
-    });
+    };
+    btn.addEventListener('click', enable);
+    // Notifications-on-by-default, as close as the platform allows: request
+    // permission on the first interaction anywhere in the app. A boot-time
+    // request would fail silently — Safari/Firefox demand a user gesture.
+    // click/keydown both carry transient activation; the button stays as
+    // status display and as the retry path.
+    if (Notification.permission === 'default') {
+      const once = () => {
+        window.removeEventListener('click', once);
+        window.removeEventListener('keydown', once);
+        enable();
+      };
+      window.addEventListener('click', once);
+      window.addEventListener('keydown', once);
+    }
   }
 
   async function maybeRequestPersist(force) {

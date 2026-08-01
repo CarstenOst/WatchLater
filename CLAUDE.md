@@ -12,7 +12,7 @@ Personal "read/watch later" app: paste a link, pick a category, set a reminder. 
 - Views: Inbox (Due now / Upcoming), Done (200 most recent)
 - Snooze (always from now) / mark done / reopen / delete
 - Best-effort title enrichment via noembed.com, with YouTube/Reddit suffix stripping
-- Best-effort notifications: open-tab 60s tick + on-focus checks, Periodic Background Sync on installed Chromium; app badge + `(n)` tab-title count
+- Best-effort notifications: open-tab 60s tick + on-focus checks, Periodic Background Sync on installed Chromium; app badge + `(n)` tab-title count. Permission is auto-requested on the first interaction anywhere in the app (gesture required by Safari/Firefox — a boot-time request would silently fail); the footer button remains as status display and retry path
 - JSON export/import — the backup **and** device-transfer story (data is per-device)
 - PWA: offline app shell, share target (Android, installed)
 
